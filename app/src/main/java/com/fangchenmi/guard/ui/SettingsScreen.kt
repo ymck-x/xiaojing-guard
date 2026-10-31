@@ -1,5 +1,9 @@
 package com.fangchenmi.guard.ui
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.fangchenmi.guard.Features
 import com.fangchenmi.guard.core.model.GuardConfig
@@ -52,6 +57,7 @@ fun SettingsScreen(
     onChangePin: () -> Unit,
     usage: com.fangchenmi.guard.core.usage.MeterState,
 ) {
+    val context = LocalContext.current
     var confirmDeactivate by remember { mutableStateOf(false) }
     val unlockedFor = (config.unlockUntilMillis - System.currentTimeMillis()).coerceAtLeast(0)
     val unlocksLeft = com.fangchenmi.guard.core.policy.UnlockPolicy.remainingUnlocks(config, usage, com.fangchenmi.guard.Features.limits)
@@ -212,6 +218,37 @@ fun SettingsScreen(
             }
         }
 
+        if (!Features.isPro) {
+            Spacer(Modifier.height(12.dp))
+            SectionCard(
+                title = "升级到付费版",
+                subtitle = "一次性 19.9 元，以后版本都免费更新。",
+            ) {
+                Text(
+                    "解锁：每个应用单独限额、护眼强制休息、禁止名单不限数量、" +
+                        "每天 3 次临时解锁（时长可调）。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(onClick = { openPurchasePage(context) }) {
+                    Text("打开购买页")
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "付款后回到这里，或在爱发电给作者发私信，说「已付款」，作者会发你一条专属下载链接（7 天有效）。",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "装的时候直接装上去覆盖免费版，不要卸载——已经设好的规则和累计时长都会保留。",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         Spacer(Modifier.height(12.dp))
         ActionCard(
             title = "解除守护",
@@ -223,7 +260,10 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(24.dp))
         Text(
-            text = "小鲸守护 v${com.fangchenmi.guard.BuildConfig.VERSION_NAME}",
+            text = buildString {
+                append("小鲸守护 v${com.fangchenmi.guard.BuildConfig.VERSION_NAME}")
+                if (Features.licensee.isNotEmpty()) append(" · 授权给 ${Features.licensee}")
+            },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth(),
@@ -250,6 +290,16 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { confirmDeactivate = false }) { Text("算了") }
             },
+        )
+    }
+}
+
+/** 打开购买页（免费版专用）。链接改 [Features.PURCHASE_URL] 一处即可。 */
+private fun openPurchasePage(context: Context) {
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(Features.PURCHASE_URL))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
     }
 }
