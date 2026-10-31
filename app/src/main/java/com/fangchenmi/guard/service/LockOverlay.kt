@@ -117,7 +117,7 @@ class LockOverlay(
 
             LockReason.TOTAL_LIMIT -> {
                 titleView?.text = "吃光啦"
-                detailView?.text = "今天的白米饭被我吃完了\n（今天已经用了 ${formatDuration(status.totalUsedMs)}）"
+                detailView?.text = "今天的时间被我喝光了\n（今天已经用了 ${formatDuration(status.totalUsedMs)}）"
                 countdownView?.visibility = View.GONE
             }
 

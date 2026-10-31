@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.fangchenmi.guard.R
+import com.fangchenmi.guard.Features
 import com.fangchenmi.guard.core.model.GuardConfig
 import com.fangchenmi.guard.core.policy.UnlockPolicy
 import com.fangchenmi.guard.core.usage.MeterState
@@ -70,7 +71,7 @@ fun DashboardScreen(
     val usedMinutes = (usage.totalMs / 60_000).toInt()
     val remaining = if (totalLimit <= 0) -1 else (totalLimit - usedMinutes).coerceAtLeast(0)
     val unlockedFor = (config.unlockUntilMillis - System.currentTimeMillis()).coerceAtLeast(0)
-    val unlocksLeft = UnlockPolicy.remainingUnlocks(config, usage)
+    val unlocksLeft = UnlockPolicy.remainingUnlocks(config, usage, com.fangchenmi.guard.Features.limits)
 
     Column(
         modifier = Modifier
@@ -113,6 +114,16 @@ fun DashboardScreen(
             )
         }
 
+        if (!Features.isPro) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "免费版 · 升级后可解锁：分应用限额、护眼强制休息、更多临时解锁",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 6.dp),
+            )
+        }
+
         if (!accessibilityEnabled) {
             Spacer(Modifier.height(12.dp))
             ActionCard(
@@ -136,10 +147,19 @@ fun DashboardScreen(
         }
 
         Spacer(Modifier.height(12.dp))
-        SectionCard(title = "今天的规矩", subtitle = "时间就是白米饭，吃完就收工") {
-            StatRow("单次连续上限", if (config.sessionMinutes <= 0) "不限" else "${config.sessionMinutes} 分钟，之后休息 ${config.breakMinutes} 分钟")
+        SectionCard(title = "今天的规矩", subtitle = "时间就是海水，被我一口喝光") {
+            StatRow(
+                "单次连续上限",
+                when {
+                    !Features.limits.allowBreak -> "付费版功能，免费版不强制休息"
+                    config.sessionMinutes <= 0 -> "不限"
+                    else -> "${config.sessionMinutes} 分钟，之后休息 ${config.breakMinutes} 分钟"
+                },
+            )
             StatRow("停机时段", if (config.bedtimeEnabled) "${formatMinuteOfDay(config.bedtimeStartMinute)} — ${formatMinuteOfDay(config.bedtimeEndMinute)}" else "未启用")
-            StatRow("今日强制休息", "${usage.breaksToday} 次")
+            if (Features.limits.allowBreak) {
+                StatRow("今日强制休息", "${usage.breaksToday} 次")
+            }
             StatRow(
                 "临时解锁",
                 "${usage.unlocksToday} 次 / ${usage.unlockMinutesToday} 分钟" +

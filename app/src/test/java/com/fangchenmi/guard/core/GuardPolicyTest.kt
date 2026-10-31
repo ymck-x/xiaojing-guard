@@ -3,6 +3,7 @@ package com.fangchenmi.guard.core
 import com.fangchenmi.guard.core.model.AppCategory
 import com.fangchenmi.guard.core.model.AppRule
 import com.fangchenmi.guard.core.model.GuardConfig
+import com.fangchenmi.guard.core.policy.GuardLimits
 import com.fangchenmi.guard.core.policy.GuardPolicy
 import com.fangchenmi.guard.core.policy.GuardStatus
 import com.fangchenmi.guard.core.policy.LockReason
@@ -58,6 +59,7 @@ class GuardPolicyTest {
         state: MeterState = MeterState(),
         pkg: String? = null,
         now: Long = at(12, 0),
+        limits: GuardLimits = GuardLimits.PRO,
     ): GuardStatus = GuardPolicy.evaluate(
         config = cfg,
         state = state,
@@ -67,6 +69,7 @@ class GuardPolicyTest {
         ignoredPackages = ignored,
         selfPackages = self,
         settingsPackages = settings,
+        limits = limits,
     )
 
     @Test
@@ -213,5 +216,54 @@ class GuardPolicyTest {
         val state = MeterState(totalMs = 30 * 60_000L)
         val r = evaluate(cfg, state, pkg = game)
         assertEquals(60 * 60_000L, r.remainingTotalMs)
+    }
+
+    // ---------- 免费版 / 付费版边界 ----------
+
+    @Test
+    fun `免费版不触发强制休息`() {
+        val cfg = config(session = 30, breakMin = 15)
+        val now = at(12, 0)
+        val resting = MeterState(sessionMs = 31L * 60_000, breakUntilMillis = now + 5 * 60_000L)
+
+        val free = evaluate(cfg, resting, game, now, GuardLimits.FREE)
+        assertFalse("免费版不该被强制休息挡住", free.locked)
+
+        val pro = evaluate(cfg, resting, game, now, GuardLimits.PRO)
+        assertTrue(pro.locked)
+        assertEquals(LockReason.SESSION_BREAK, pro.reason)
+    }
+
+    @Test
+    fun `免费版忽略单应用限额`() {
+        val cfg = config()
+        val state = MeterState(perAppMs = mapOf(game to 60L * 60_000))
+
+        val free = evaluate(cfg, state, game, limits = GuardLimits.FREE)
+        assertFalse("免费版不看单应用限额", free.locked)
+
+        val pro = evaluate(cfg, state, game, limits = GuardLimits.PRO)
+        assertTrue(pro.locked)
+        assertEquals(LockReason.APP_LIMIT, pro.reason)
+    }
+
+    @Test
+    fun `免费版禁止名单只生效前三个`() {
+        val blocked = (1..4).map { AppRule(pkg = "com.example.b$it", category = AppCategory.BLOCK) }
+        val cfg = GuardConfig(enabled = true, totalDailyMinutes = 0, bedtimeEnabled = false, appRules = blocked)
+
+        assertTrue(evaluate(cfg, pkg = "com.example.b1", limits = GuardLimits.FREE).locked)
+        assertTrue(evaluate(cfg, pkg = "com.example.b3", limits = GuardLimits.FREE).locked)
+        assertFalse("第四个超出免费额度，不该拦", evaluate(cfg, pkg = "com.example.b4", limits = GuardLimits.FREE).locked)
+        assertTrue("付费版四个都拦", evaluate(cfg, pkg = "com.example.b4", limits = GuardLimits.PRO).locked)
+    }
+
+    @Test
+    fun `免费版学习类仍然不计时`() {
+        val cfg = config()
+        val state = MeterState(totalMs = 30L * 60_000, perAppMs = mapOf(study to 30L * 60_000))
+        // 学习类在免费版也必须放行——不然会误伤网课
+        val r = evaluate(cfg, state, study, limits = GuardLimits.FREE)
+        assertFalse(r.locked)
     }
 }

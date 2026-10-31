@@ -44,21 +44,33 @@ object Counting {
         pkg: String?,
         ignoredPackages: Set<String>,
         selfPackages: Set<String>,
+        limits: GuardLimits = GuardLimits.PRO,
     ): Boolean {
         if (pkg == null) return false
         if (pkg in selfPackages) return false
         if (pkg in ignoredPackages) return false
-        return config.categoryOf(pkg) == AppCategory.ENTERTAIN
+        return effectiveCategory(config, pkg, limits) == AppCategory.ENTERTAIN
+    }
+
+    /**
+     * 免费版不提供「学习类不计时」的细分？—— 提供。
+     * 但免费版不提供「单独限额」，所以这里只做分类归一化。
+     */
+    fun effectiveCategory(config: GuardConfig, pkg: String?, limits: GuardLimits): AppCategory {
+        val raw = config.categoryOf(pkg)
+        return if (!limits.allowStudyCategory && raw == AppCategory.STUDY) AppCategory.ENTERTAIN else raw
     }
 
     fun meterContext(
         config: GuardConfig,
         ignoredPackages: Set<String>,
         selfPackages: Set<String>,
+        limits: GuardLimits = GuardLimits.PRO,
     ): MeterContext = MeterContext(
-        isCounted = { pkg -> isCounted(config, pkg, ignoredPackages, selfPackages) },
-        sessionLimitMinutes = config.sessionMinutes,
-        breakMinutes = config.breakMinutes,
+        isCounted = { pkg -> isCounted(config, pkg, ignoredPackages, selfPackages, limits) },
+        // 免费版没有强制休息：连续时长直接放空，免得休息倒计时把免费用户挡在外面。
+        sessionLimitMinutes = if (limits.allowBreak) config.sessionMinutes else 0,
+        breakMinutes = if (limits.allowBreak) config.breakMinutes else 0,
     )
 }
 
@@ -77,6 +89,7 @@ object GuardPolicy {
         ignoredPackages: Set<String>,
         selfPackages: Set<String>,
         settingsPackages: Set<String>,
+        limits: GuardLimits = GuardLimits.PRO,
     ): GuardStatus {
         val rule = config.ruleFor(subjectPkg)
         val base = GuardStatus(
@@ -85,7 +98,7 @@ object GuardPolicy {
             appUsedMs = state.usedOf(subjectPkg),
             appLimitMinutes = rule?.dailyLimitMinutes ?: 0,
             enforced = config.enabled,
-            unlocksLeftToday = UnlockPolicy.remainingUnlocks(config, state),
+            unlocksLeftToday = UnlockPolicy.remainingUnlocks(config, state, limits),
         )
 
         // 注意：自己的应用不在这里提前放行。
@@ -109,7 +122,7 @@ object GuardPolicy {
             }
         }
 
-        if (state.breakUntilMillis > nowMillis) {
+        if (limits.allowBreak && state.breakUntilMillis > nowMillis) {
             return base.copy(
                 locked = true,
                 scope = LockScope.GLOBAL,
@@ -133,15 +146,23 @@ object GuardPolicy {
 
         if (subjectPkg in ignoredPackages) return base
 
-        when (config.categoryOf(subjectPkg)) {
+        when (Counting.effectiveCategory(config, subjectPkg, limits)) {
             AppCategory.STUDY -> return base
-            AppCategory.BLOCK -> return base.copy(
-                locked = true, scope = LockScope.APP, reason = LockReason.BLOCKED_APP,
-            )
+            AppCategory.BLOCK -> {
+                // 免费版最多生效 3 个「禁止」，超出的不拦（家长设置时也会被挡住）。
+                val blocked = config.appRules.filter { it.category == AppCategory.BLOCK }
+                val index = blocked.indexOfFirst { it.pkg == subjectPkg }
+                if (index in 0 until limits.maxBlockedApps) {
+                    return base.copy(
+                        locked = true, scope = LockScope.APP, reason = LockReason.BLOCKED_APP,
+                    )
+                }
+                return base
+            }
             AppCategory.ENTERTAIN -> Unit
         }
 
-        val appLimit = rule?.dailyLimitMinutes ?: 0
+        val appLimit = if (limits.allowPerAppLimit) rule?.dailyLimitMinutes ?: 0 else 0
         if (appLimit > 0 && state.usedOf(subjectPkg) >= appLimit * 60_000L) {
             return base.copy(locked = true, scope = LockScope.APP, reason = LockReason.APP_LIMIT)
         }

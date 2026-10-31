@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.fangchenmi.guard.Features
 import com.fangchenmi.guard.core.model.GuardConfig
 import com.fangchenmi.guard.core.pin.PinHasher
 import com.fangchenmi.guard.ui.components.MinuteStepper
@@ -53,7 +54,7 @@ fun SettingsScreen(
 ) {
     var confirmDeactivate by remember { mutableStateOf(false) }
     val unlockedFor = (config.unlockUntilMillis - System.currentTimeMillis()).coerceAtLeast(0)
-    val unlocksLeft = com.fangchenmi.guard.core.policy.UnlockPolicy.remainingUnlocks(config, usage)
+    val unlocksLeft = com.fangchenmi.guard.core.policy.UnlockPolicy.remainingUnlocks(config, usage, com.fangchenmi.guard.Features.limits)
 
     Column(
         modifier = Modifier
@@ -135,34 +136,47 @@ fun SettingsScreen(
                 "家长临时用一下平板时，解锁后一段时间内不做任何拦截。"
             },
         ) {
-            SettingRow(
-                title = "每次解锁时长",
-                subtitle = "解锁期间不计时、不拦截",
-            ) {
-                MinuteStepper(
-                    value = config.unlockMinutes,
-                    onChange = { onConfigChange(config.copy(unlockMinutes = it)) },
-                    step = 5,
-                    min = 5,
-                    max = 60,
-                )
-            }
-            SettingRow(
-                title = "每天最多解锁次数",
-                subtitle = if (config.maxUnlocksPerDay <= 0) {
-                    "不限（不建议：密码一旦泄露就等于没有上限）"
-                } else {
-                    "今天已用 ${usage.unlocksToday} 次，共 ${usage.unlockMinutesToday} 分钟"
-                },
-            ) {
-                MinuteStepper(
-                    value = config.maxUnlocksPerDay,
-                    onChange = { onConfigChange(config.copy(maxUnlocksPerDay = it)) },
-                    step = 1,
-                    min = 0,
-                    max = 10,
-                    unit = "次",
-                )
+            if (Features.isPro) {
+                SettingRow(
+                    title = "每次解锁时长",
+                    subtitle = "解锁期间不计时、不拦截",
+                ) {
+                    MinuteStepper(
+                        value = config.unlockMinutes,
+                        onChange = { onConfigChange(config.copy(unlockMinutes = it)) },
+                        step = 5,
+                        min = 5,
+                        max = 60,
+                    )
+                }
+                SettingRow(
+                    title = "每天最多解锁次数",
+                    subtitle = if (config.maxUnlocksPerDay <= 0) {
+                        "不限（不建议：密码一旦泄露就等于没有上限）"
+                    } else {
+                        "今天已用 ${usage.unlocksToday} 次，共 ${usage.unlockMinutesToday} 分钟"
+                    },
+                ) {
+                    MinuteStepper(
+                        value = config.maxUnlocksPerDay,
+                        onChange = { onConfigChange(config.copy(maxUnlocksPerDay = it)) },
+                        step = 1,
+                        min = 0,
+                        max = 10,
+                        unit = "次",
+                    )
+                }
+            } else {
+                SettingRow(
+                    title = "免费版额度",
+                    subtitle = "每天 1 次、每次 10 分钟。付费版可以自己调时长和次数。",
+                ) {
+                    Text(
+                        "🔒",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(
@@ -172,7 +186,7 @@ fun SettingsScreen(
                     Text(
                         when {
                             unlocksLeft == 0 -> "今天次数已用完"
-                            else -> "解锁 ${config.unlockMinutes} 分钟"
+                            else -> "解锁 ${com.fangchenmi.guard.core.policy.UnlockPolicy.minutesPerUnlock(config, com.fangchenmi.guard.Features.limits)} 分钟"
                         },
                     )
                 }

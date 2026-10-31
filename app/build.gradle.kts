@@ -15,8 +15,8 @@ android {
         applicationId = "com.fangchenmi.guard"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.0.1"
+        versionCode = 4
+        versionName = "1.1.0"
     }
 
     signingConfigs {
@@ -33,6 +33,20 @@ android {
                 keyAlias = props.getProperty("keyAlias")
                 keyPassword = props.getProperty("keyPassword")
             }
+        }
+    }
+
+    // 免费版 / 付费版：同包名、同签名，付费版可直接覆盖安装免费版，数据保留。
+    flavorDimensions += "tier"
+    productFlavors {
+        create("free") {
+            dimension = "tier"
+            buildConfigField("boolean", "PRO", "false")
+            versionNameSuffix = "-free"
+        }
+        create("pro") {
+            dimension = "tier"
+            buildConfigField("boolean", "PRO", "true")
         }
     }
 

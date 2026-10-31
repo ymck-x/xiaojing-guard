@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.fangchenmi.guard.Features
 import com.fangchenmi.guard.core.model.GuardConfig
 import com.fangchenmi.guard.ui.components.MinuteStepper
 import com.fangchenmi.guard.ui.components.SectionCard
@@ -93,23 +94,33 @@ fun RulesSection(
                 max = 720,
             )
         }
-        SettingRow("单次连续", "到点强制休息，防止一次玩太久") {
-            MinuteStepper(
-                value = config.sessionMinutes,
-                onChange = { onChange(config.copy(sessionMinutes = it)) },
-                step = 5,
-                max = 180,
-            )
-        }
-        if (config.sessionMinutes > 0) {
-            SettingRow("每次休息", "休息期间整台平板暂停") {
+        if (Features.limits.allowBreak) {
+            SettingRow("单次连续", "到点强制休息，防止一次玩太久") {
                 MinuteStepper(
-                    value = config.breakMinutes,
-                    onChange = { onChange(config.copy(breakMinutes = it)) },
+                    value = config.sessionMinutes,
+                    onChange = { onChange(config.copy(sessionMinutes = it)) },
                     step = 5,
-                    min = 1,
-                    max = 60,
-                    displayZero = "1 分钟",
+                    max = 180,
+                )
+            }
+            if (config.sessionMinutes > 0) {
+                SettingRow("每次休息", "休息期间整台平板暂停") {
+                    MinuteStepper(
+                        value = config.breakMinutes,
+                        onChange = { onChange(config.copy(breakMinutes = it)) },
+                        step = 5,
+                        min = 1,
+                        max = 60,
+                        displayZero = "1 分钟",
+                    )
+                }
+            }
+        } else {
+            SettingRow("单次连续", "付费版：到点强制休息，防止一次玩太久") {
+                Text(
+                    "🔒",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

@@ -13,27 +13,45 @@ import com.fangchenmi.guard.core.usage.MeterState
 object UnlockPolicy {
 
     /** -1 表示不限次数。 */
-    fun remainingUnlocks(config: GuardConfig, state: MeterState): Int =
-        if (config.maxUnlocksPerDay <= 0) {
-            -1
-        } else {
-            (config.maxUnlocksPerDay - state.unlocksToday).coerceAtLeast(0)
-        }
+    /** 免费版固定每天 1 次、每次 10 分钟；付费版听家长的。 */
+    fun dailyLimit(config: GuardConfig, limits: GuardLimits): Int =
+        if (config.maxUnlocksPerDay <= 0) -1
+        else minOf(config.maxUnlocksPerDay, limits.maxUnlocksPerDay)
 
-    fun canUnlock(config: GuardConfig, state: MeterState): Boolean {
-        if (!config.pin.configured) return false
-        val remaining = remainingUnlocks(config, state)
-        return remaining != 0
+    fun remainingUnlocks(
+        config: GuardConfig,
+        state: MeterState,
+        limits: GuardLimits = GuardLimits.PRO,
+    ): Int {
+        val daily = dailyLimit(config, limits)
+        return if (daily < 0) -1 else (daily - state.unlocksToday).coerceAtLeast(0)
     }
 
-    fun minutesPerUnlock(config: GuardConfig): Int = config.unlockMinutes.coerceIn(1, 120)
+    fun canUnlock(
+        config: GuardConfig,
+        state: MeterState,
+        limits: GuardLimits = GuardLimits.PRO,
+    ): Boolean {
+        if (!config.pin.configured) return false
+        return remainingUnlocks(config, state, limits) != 0
+    }
 
-    fun unlockUntil(config: GuardConfig, nowMillis: Long): Long =
-        nowMillis + minutesPerUnlock(config) * 60_000L
+    fun minutesPerUnlock(config: GuardConfig, limits: GuardLimits = GuardLimits.PRO): Int =
+        config.unlockMinutes.coerceIn(1, limits.maxUnlockMinutes)
+
+    fun unlockUntil(
+        config: GuardConfig,
+        nowMillis: Long,
+        limits: GuardLimits = GuardLimits.PRO,
+    ): Long = nowMillis + minutesPerUnlock(config, limits) * 60_000L
 
     /** 记一笔账：次数 +1，累计分钟数累加。 */
-    fun applyUnlock(config: GuardConfig, state: MeterState): MeterState = state.copy(
+    fun applyUnlock(
+        config: GuardConfig,
+        state: MeterState,
+        limits: GuardLimits = GuardLimits.PRO,
+    ): MeterState = state.copy(
         unlocksToday = state.unlocksToday + 1,
-        unlockMinutesToday = state.unlockMinutesToday + minutesPerUnlock(config),
+        unlockMinutesToday = state.unlockMinutesToday + minutesPerUnlock(config, limits),
     )
 }

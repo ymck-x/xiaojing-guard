@@ -1,5 +1,7 @@
 package com.fangchenmi.guard.service
 
+import com.fangchenmi.guard.Features
+
 import android.accessibilityservice.AccessibilityService
 import android.app.Application
 import android.content.BroadcastReceiver
@@ -181,6 +183,7 @@ class GuardEngine(
             ignoredPackages = facts.ignoredPackages,
             selfPackages = facts.selfPackages,
             settingsPackages = facts.settingsPackages,
+            limits = Features.limits,
         )
         if (BuildConfig.DEBUG && state.foregroundPkg != lastLoggedPkg) {
             lastLoggedPkg = state.foregroundPkg
@@ -337,23 +340,23 @@ class GuardEngine(
         val now = System.currentTimeMillis()
         val config = configStore.current()
         if (!config.pin.configured) return UnlockOutcome.NoPin
-        if (!UnlockPolicy.canUnlock(config, state)) {
+        if (!UnlockPolicy.canUnlock(config, state, Features.limits)) {
             return UnlockOutcome.QuotaExhausted
         }
-        state = UnlockPolicy.applyUnlock(config, state)
+        state = UnlockPolicy.applyUnlock(config, state, Features.limits)
         usageStore.save(state)
-        configStore.update { it.copy(unlockUntilMillis = UnlockPolicy.unlockUntil(it, now)) }
+        configStore.update { it.copy(unlockUntilMillis = UnlockPolicy.unlockUntil(it, now, Features.limits)) }
         onConfigChanged()
         _usage.value = state
         Log.i(TAG, "unlock granted, unlocksToday=${state.unlocksToday} minutes=${config.unlockMinutes}")
-        return UnlockOutcome.Granted(UnlockPolicy.minutesPerUnlock(config))
+        return UnlockOutcome.Granted(UnlockPolicy.minutesPerUnlock(config, Features.limits))
     }
 
     private fun dayKey(now: Long, config: GuardConfig): String =
         Days.dayKey(now, zone, config.dayStartHour)
 
     private fun meterContext(config: GuardConfig) =
-        Counting.meterContext(config, facts.ignoredPackages, facts.selfPackages)
+        Counting.meterContext(config, facts.ignoredPackages, facts.selfPackages, Features.limits)
 
     private companion object {
         const val TAG = "FangChenMi"

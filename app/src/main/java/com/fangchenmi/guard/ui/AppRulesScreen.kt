@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.fangchenmi.guard.Features
 import com.fangchenmi.guard.core.model.AppCategory
 import com.fangchenmi.guard.core.model.AppRule
 import com.fangchenmi.guard.core.model.GuardConfig
@@ -59,6 +60,8 @@ fun AppRulesScreen(
     var loading by remember { mutableStateOf(true) }
     var query by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<InstalledApp?>(null) }
+    var paywall by remember { mutableStateOf<String?>(null) }
+    val limits = Features.limits
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -74,6 +77,14 @@ fun AppRulesScreen(
 
     fun setCategory(app: InstalledApp, category: AppCategory) {
         val existing = config.ruleFor(app.pkg)
+        // 免费版最多 3 个「禁止」：超了就提示升级，而不是让家长设了却不生效。
+        if (category == AppCategory.BLOCK && existing?.category != AppCategory.BLOCK) {
+            val blocked = config.appRules.count { it.category == AppCategory.BLOCK }
+            if (blocked >= limits.maxBlockedApps) {
+                paywall = "免费版最多把 ${limits.maxBlockedApps} 个应用设为「禁止」。付费版不限数量。"
+                return
+            }
+        }
         val updated = existing?.copy(category = category, label = app.label)
             ?: AppRule(pkg = app.pkg, label = app.label, category = category)
         onConfigChange(config.copy(appRules = config.appRules.filterNot { it.pkg == app.pkg } + updated))
@@ -83,6 +94,7 @@ fun AppRulesScreen(
         if (query.isBlank()) apps
         else apps.filter { it.label.contains(query, ignoreCase = true) || it.pkg.contains(query, ignoreCase = true) }
     }
+    val limitAllowed = limits.allowPerAppLimit
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
         Spacer(Modifier.height(12.dp))
@@ -132,8 +144,12 @@ fun AppRulesScreen(
                 AppRow(
                     app = app,
                     config = config,
+                    allowLimit = limitAllowed,
                     onCategory = { setCategory(app, it) },
-                    onEditLimit = { editing = app },
+                    onEditLimit = {
+                        if (limitAllowed) editing = app
+                        else paywall = "单应用限额是付费版功能：抖音每天只能玩 20 分钟这种设置，免费版没有。"
+                    },
                 )
             }
             item { Spacer(Modifier.height(24.dp)) }
@@ -141,6 +157,15 @@ fun AppRulesScreen(
     }
 
     val target = editing
+    val wall = paywall
+    if (wall != null) {
+        AlertDialog(
+            onDismissRequest = { paywall = null },
+            title = { Text("付费版功能") },
+            text = { Text(wall) },
+            confirmButton = { TextButton(onClick = { paywall = null }) { Text("知道了") } },
+        )
+    }
     if (target != null) {
         val rule = config.ruleFor(target.pkg)
         var minutes by remember(target.pkg) {
@@ -187,6 +212,7 @@ fun AppRulesScreen(
 private fun AppRow(
     app: InstalledApp,
     config: GuardConfig,
+    allowLimit: Boolean,
     onCategory: (AppCategory) -> Unit,
     onEditLimit: () -> Unit,
 ) {
@@ -253,9 +279,13 @@ private fun AppRow(
                 Spacer(Modifier.weight(1f))
                 if (category == AppCategory.ENTERTAIN) {
                     Text(
-                        "限额",
+                        if (allowLimit) "限额" else "限额 🔒",
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = if (allowLimit) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
                             .clickable(onClick = onEditLimit)
