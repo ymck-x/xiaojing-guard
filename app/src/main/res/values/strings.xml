@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">小鲸守护</string>
+
+    <string name="accessibility_label">小鲸守护 · 使用守护</string>
+    <string name="accessibility_desc">用于判断当前正在使用哪个应用，从而按家长设定的时长自动提醒并锁屏。本服务不读取屏幕内容，也不收集任何数据。</string>
+
+    <string name="device_admin_label">小鲸守护 · 卸载保护</string>
+    <string name="device_admin_desc">防止孩子未经家长同意直接卸载本应用。家长可在应用内凭密码解除。</string>
+</resources>

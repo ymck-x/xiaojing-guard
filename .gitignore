@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# 本机 SDK 路径
+local.properties
+
+# 调试与素材中间产物
+build-artifacts/
+*.log
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# 签名密钥与口令：绝不入库。
+# 丢了就没法给老用户发升级版，请单独备份（离线盘 / 密码管理器）。
+keystore/
+
+# 发布产物走 GitHub Releases，不进仓库。
+dist/
