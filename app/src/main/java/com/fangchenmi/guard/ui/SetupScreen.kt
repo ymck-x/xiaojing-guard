@@ -91,8 +91,8 @@ fun SetupScreen(
         Spacer(Modifier.height(10.dp))
         StepCard(
             index = 3,
-            title = "开启卸载保护（建议）",
-            detail = "开启后孩子无法直接卸载本应用。需要家长密码才能取消。",
+            title = "开启卸载保护（强烈建议）",
+            detail = "不开这个，长按桌面图标就能直接卸载，前面的规矩全白设。开启后卸载前必须先停用设备管理员。",
             done = deviceAdminActive,
             actionText = if (deviceAdminActive) "已开启" else "去开启",
             onAction = onEnableDeviceAdmin,

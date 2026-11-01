@@ -27,9 +27,23 @@ class GuardAccessibilityService : AccessibilityService() {
             pinVerifier = { pin -> Guard.pinGuard.verify(pin, Guard.config.current().pin) },
             pinLength = { Guard.config.current().pin.length },
             onUnlockRequest = { Guard.engine.requestUnlock() },
+            onSecretEntry = { openParentApp() },
         )
         overlay = lockOverlay
         Guard.engine.attach(this, lockOverlay)
+    }
+
+    /**
+     * 锁屏右下角连点 5 次的入口。
+     * 场景：家长把通知划掉了、图标又是隐藏的——没有这个暗门就再也进不去应用。
+     */
+    private fun openParentApp() {
+        runCatching {
+            startActivity(
+                Intent(this, com.fangchenmi.guard.ui.MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            )
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {

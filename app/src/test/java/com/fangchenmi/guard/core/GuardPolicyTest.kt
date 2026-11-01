@@ -21,7 +21,11 @@ class GuardPolicyTest {
     private val zone: ZoneId = ZoneId.of("Asia/Shanghai")
     private val self = setOf("com.fangchenmi.guard")
     private val ignored = setOf("com.android.systemui")
-    private val settings = setOf("com.android.settings", "com.coloros.safecenter")
+    private val settings = setOf(
+        "com.android.settings",
+        "com.coloros.safecenter",
+        "com.android.packageinstaller",
+    )
 
     private val game = "com.example.game"
     private val study = "com.example.study"
@@ -60,6 +64,8 @@ class GuardPolicyTest {
         pkg: String? = null,
         now: Long = at(12, 0),
         limits: GuardLimits = GuardLimits.PRO,
+        installers: Set<String> = setOf("com.android.packageinstaller"),
+        settingsGrace: Long = 0L,
     ): GuardStatus = GuardPolicy.evaluate(
         config = cfg,
         state = state,
@@ -70,6 +76,8 @@ class GuardPolicyTest {
         selfPackages = self,
         settingsPackages = settings,
         limits = limits,
+        installerPackages = installers,
+        settingsGraceUntilMillis = settingsGrace,
     )
 
     @Test
@@ -216,6 +224,34 @@ class GuardPolicyTest {
         val state = MeterState(totalMs = 30 * 60_000L)
         val r = evaluate(cfg, state, pkg = game)
         assertEquals(60 * 60_000L, r.remainingTotalMs)
+    }
+
+    @Test
+    fun `从应用内跳设置时短暂放行`() {
+        // 守护开着 + 禁止进入设置：家长在应用里点「去开启卸载保护」要能进设置，
+        // 否则永远开不了，形成死锁。
+        val cfg = config(blockSettings = true)
+        val now = at(12, 0)
+
+        assertTrue("平时必须拦", evaluate(cfg, pkg = "com.android.settings", now = now).locked)
+
+        val opened = evaluate(cfg, pkg = "com.android.settings", now = now, settingsGrace = now + 60_000)
+        assertFalse("放行窗口内要能进设置", opened.locked)
+
+        val expired = evaluate(cfg, pkg = "com.android.settings", now = now, settingsGrace = now - 1)
+        assertTrue("窗口过期后恢复拦截", expired.locked)
+    }
+
+    @Test
+    fun `系统安装器始终被拦`() {
+        // 长按桌面图标 → 卸载，走的是系统安装器，不是「设置」。
+        // 它必须无条件拦，不能挂在「禁止进入设置」那个开关下面。
+        val r = evaluate(config(), pkg = "com.android.packageinstaller")
+        assertTrue(r.locked)
+        assertEquals(LockReason.BLOCKED_APP, r.reason)
+
+        val off = evaluate(config(blockSettings = false), pkg = "com.android.packageinstaller")
+        assertTrue("关掉「禁止进入设置」也不能放开卸载", off.locked)
     }
 
     // ---------- 免费版 / 付费版边界 ----------

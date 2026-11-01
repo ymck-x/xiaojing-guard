@@ -85,6 +85,15 @@ data class GuardConfig(
 
     /** 每天最多临时解锁几次。0 = 不限（不建议）。 */
     val maxUnlocksPerDay: Int = 3,
+
+    /**
+     * 是否在桌面显示图标。
+     *
+     * 默认 **false**（不显示）——守护一开，孩子就找不到卸载入口，家长从常驻通知进。
+     * 用「反面默认」而不是 hideIcon=true，是为了让升级前的旧配置（没有这个字段）
+     * 读出来也自动变成「隐藏」，不用用户再操作一遍。
+     */
+    val showLauncherIcon: Boolean = false,
 ) {
     fun ruleFor(pkg: String?): AppRule? =
         if (pkg == null) null else appRules.firstOrNull { it.pkg == pkg }

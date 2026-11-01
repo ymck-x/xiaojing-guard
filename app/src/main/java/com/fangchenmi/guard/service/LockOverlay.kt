@@ -37,6 +37,8 @@ class LockOverlay(
     private val pinVerifier: (String) -> PinAttemptGuard.Result,
     private val pinLength: () -> Int,
     private val onUnlockRequest: () -> UnlockOutcome,
+    /** 角落暗门：图标和通知都没了时，家长靠它进应用。 */
+    private val onSecretEntry: () -> Unit = {},
 ) {
 
     private val windowManager: WindowManager = service.getSystemService(WindowManager::class.java)
@@ -51,6 +53,8 @@ class LockOverlay(
     private var dotsView: TextView? = null
     private var errorView: TextView? = null
     private var pinBuffer = StringBuilder()
+    private var secretTaps = 0
+    private var secretLastTapAt = 0L
     private var lockedOutUntil = 0L
 
     private var shownReason: LockReason? = null
@@ -220,6 +224,48 @@ class LockOverlay(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(38f) },
+        )
+
+        // 右下角 72dp 的透明热区，连点 5 次（3 秒内）打开应用。
+        // 前两下不给反馈（孩子误触看不出来）；第三下起浮出小圆点，
+        // 家长能确认自己点对了，第五下直接进应用。
+        val secretDots = TextView(service).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextColor(0x66C7D2E8)
+            gravity = Gravity.CENTER
+            visibility = View.INVISIBLE
+        }
+        root.addView(
+            secretDots,
+            FrameLayout.LayoutParams(dp(120f), dp(24f), Gravity.BOTTOM or Gravity.END).apply {
+                rightMargin = dp(24f)
+                bottomMargin = dp(88f)
+            },
+        )
+
+        val secret = View(service).apply {
+            isClickable = true
+            setOnClickListener {
+                val now = System.currentTimeMillis()
+                if (now - secretLastTapAt > 3000L) secretTaps = 0
+                secretLastTapAt = now
+                secretTaps++
+                if (secretTaps >= 5) {
+                    secretTaps = 0
+                    secretDots.visibility = View.INVISIBLE
+                    onSecretEntry()
+                } else if (secretTaps >= 3) {
+                    secretDots.text = "● ".repeat(secretTaps - 2).trim()
+                    secretDots.visibility = View.VISIBLE
+                }
+            }
+        }
+        root.addView(
+            secret,
+            FrameLayout.LayoutParams(dp(72f), dp(72f), Gravity.BOTTOM or Gravity.END).apply {
+                rightMargin = dp(12f)
+                bottomMargin = dp(12f)
+            },
         )
 
         return root

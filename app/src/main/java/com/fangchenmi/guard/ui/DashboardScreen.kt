@@ -66,6 +66,7 @@ fun DashboardScreen(
     onOpenSettings: () -> Unit,
     onTempUnlock: () -> Unit,
     onOpenAccessibility: () -> Unit,
+    onEnableDeviceAdmin: () -> Unit = {},
 ) {
     val totalLimit = config.totalDailyMinutes
     val usedMinutes = (usage.totalMs / 60_000).toInt()
@@ -87,9 +88,10 @@ fun DashboardScreen(
                 text = when {
                     !config.enabled -> "未开启"
                     !accessibilityEnabled -> "缺少权限"
+                    !deviceAdminActive -> "守护中 · 可卸载"
                     else -> "守护中"
                 },
-                good = config.enabled && accessibilityEnabled,
+                good = config.enabled && accessibilityEnabled && deviceAdminActive,
             )
         }
         Spacer(Modifier.height(14.dp))
@@ -142,6 +144,19 @@ fun DashboardScreen(
                 detail = "打开守护我才会开始计时和拦截。",
                 actionText = "去开启",
                 onAction = onOpenSettings,
+                warn = true,
+            )
+        }
+
+        // 无障碍开着、守护也开着，但卸载保护没开——这时候长按图标就能直接卸掉，
+        // 徽标却写着「守护中」，家长会以为删不掉。必须显式警告。
+        if (config.enabled && accessibilityEnabled && !deviceAdminActive) {
+            Spacer(Modifier.height(12.dp))
+            ActionCard(
+                title = "孩子可以直接卸载它",
+                detail = "卸载保护没开。打开之后，卸载前必须先停用设备管理员，多一道坎。",
+                actionText = "去开启",
+                onAction = onEnableDeviceAdmin,
                 warn = true,
             )
         }
@@ -202,7 +217,7 @@ fun DashboardScreen(
                 modifier = Modifier.weight(1f).height(50.dp),
                 shape = RoundedCornerShape(50),
                 onClick = onOpenSettings,
-            ) { Text("家长置置") }
+            ) { Text("家长设置") }
             OutlinedButton(
                 modifier = Modifier.weight(1f).height(50.dp),
                 shape = RoundedCornerShape(50),

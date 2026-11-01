@@ -90,6 +90,8 @@ object GuardPolicy {
         selfPackages: Set<String>,
         settingsPackages: Set<String>,
         limits: GuardLimits = GuardLimits.PRO,
+        installerPackages: Set<String> = emptySet(),
+        settingsGraceUntilMillis: Long = 0L,
     ): GuardStatus {
         val rule = config.ruleFor(subjectPkg)
         val base = GuardStatus(
@@ -138,9 +140,17 @@ object GuardPolicy {
         if (subjectPkg == null) return base
         if (subjectPkg in selfPackages) return base
 
+        // 系统安装器 / 卸载确认：只要守护开着就拦，不受「禁止进入设置」那个开关影响。
+        // 否则家长关掉那个开关，长按图标就能把应用卸了。
+        if (subjectPkg in installerPackages) {
+            return base.copy(locked = true, scope = LockScope.APP, reason = LockReason.BLOCKED_APP)
+        }
+
         // 必须先判「设置」再判「忽略名单」：个别 ROM 把 FallbackHome 挂在 Settings 包里，
         // 导致设置同时属于桌面类。顺序反了的话，孩子只要进设置就能自己关掉守护。
-        if (config.blockSettings && subjectPkg in settingsPackages) {
+        // 家长从应用内点「去开启」跳系统设置时，会开一个短暂的放行窗口，
+        // 否则守护开着就永远进不去设置、也就永远开不了卸载保护（死锁）。
+        if (config.blockSettings && subjectPkg in settingsPackages && nowMillis >= settingsGraceUntilMillis) {
             return base.copy(locked = true, scope = LockScope.APP, reason = LockReason.BLOCKED_APP)
         }
 

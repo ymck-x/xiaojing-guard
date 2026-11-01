@@ -89,6 +89,23 @@ class PackageFacts(private val context: Context) {
 
     fun isSettings(pkg: String?): Boolean = pkg != null && pkg in settingsPackages
 
+    /** 系统安装器 / 卸载确认界面。提示文案和「设置」要分开，不然家长看不懂。 */
+    /**
+     * 系统安装器 / 卸载确认界面。
+     * 和「设置」分开成独立的集合，因为它不该受「禁止进入设置」那个开关影响——
+     * 只要守护开着，卸载就必须先过密码。
+     */
+    val installerPackages: Set<String> by lazy {
+        runCatching {
+            val pm = context.packageManager
+            pm.getInstalledPackages(0).map { it.packageName }
+                .filter { it.contains("packageinstaller") || it.contains("pkginstaller") }
+                .toSet()
+        }.getOrDefault(emptySet())
+    }
+
+    fun isInstaller(pkg: String?): Boolean = pkg != null && pkg in installerPackages
+
     private fun homePackages(): Set<String> = runCatching {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         val pm = context.packageManager
@@ -139,7 +156,13 @@ class PackageFacts(private val context: Context) {
             "com.huawei.hidisk",
             // 三星
             "com.samsung.android.lool",
-            // 通用
+            // 通用：系统安装器。卸载确认、安装确认都走它。
+            // 不拦这里的话，「长按桌面图标 → 卸载」可以一步卸掉，
+            // 和首页显示的「守护中」完全矛盾。
+            "com.android.packageinstaller",
+            "com.google.android.packageinstaller",
+            "com.android.packageinstaller.vivo",
+            "com.iqoo.packageinstaller",
         )
     }
 }

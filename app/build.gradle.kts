@@ -15,8 +15,8 @@ android {
         applicationId = "com.fangchenmi.guard"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.2.0"
+        versionCode = 21
+        versionName = "1.3.5"
         // 付费版打包时用 -Plicensee="买家昵称" 注入授权信息；免费版为空。
         val licensee = (project.findProperty("licensee") as String?) ?: ""
         buildConfigField("String", "LICENSEE", "\"$licensee\"")

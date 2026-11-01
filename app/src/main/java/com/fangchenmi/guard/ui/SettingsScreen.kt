@@ -3,10 +3,13 @@ package com.fangchenmi.guard.ui
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.fangchenmi.guard.Features
+import kotlinx.coroutines.delay
 import com.fangchenmi.guard.core.model.GuardConfig
 import com.fangchenmi.guard.core.pin.PinHasher
 import com.fangchenmi.guard.ui.components.MinuteStepper
@@ -47,6 +52,7 @@ fun SettingsScreen(
     config: GuardConfig,
     accessibilityEnabled: Boolean,
     deviceAdminActive: Boolean,
+    deviceOwner: Boolean,
     onConfigChange: (GuardConfig) -> Unit,
     onBack: () -> Unit,
     onOpenApps: () -> Unit,
@@ -59,8 +65,23 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     var confirmDeactivate by remember { mutableStateOf(false) }
+    var showDeviceOwnerGuide by remember { mutableStateOf(false) }
     val unlockedFor = (config.unlockUntilMillis - System.currentTimeMillis()).coerceAtLeast(0)
     val unlocksLeft = com.fangchenmi.guard.core.policy.UnlockPolicy.remainingUnlocks(config, usage, com.fangchenmi.guard.Features.limits)
+
+    // 改动即时生效、不需要点保存——但家长看不到这件事就会怀疑没存上。
+    // 每次配置变化闪一下「已保存」，比放一个保存按钮更符合这个应用的使用节奏。
+    var changedOnce by remember { mutableStateOf(false) }
+    var savedFlash by remember { mutableStateOf(false) }
+    LaunchedEffect(config) {
+        if (!changedOnce) {
+            changedOnce = true
+            return@LaunchedEffect
+        }
+        savedFlash = true
+        delay(1600)
+        savedFlash = false
+    }
 
     Column(
         modifier = Modifier
@@ -74,8 +95,22 @@ fun SettingsScreen(
             Spacer(Modifier.weight(1f))
             Text("家长设置", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.weight(1f))
-            Spacer(Modifier.width(64.dp))
+            Box(modifier = Modifier.width(64.dp), contentAlignment = Alignment.CenterEnd) {
+                if (savedFlash) {
+                    Text(
+                        "已保存 ✓",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = StatusGood,
+                    )
+                }
+            }
         }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "改动即时生效；设置完点底部的「保存并返回」即可。",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Spacer(Modifier.height(8.dp))
 
         SectionCard(title = "守护开关") {
@@ -109,12 +144,45 @@ fun SettingsScreen(
             }
             SettingRow(
                 title = "卸载保护",
-                subtitle = if (deviceAdminActive) "已开启，孩子删不掉" else "未开启，孩子可以直接卸载",
+                subtitle = when {
+                    deviceOwner -> "已开启（设备所有者）：系统层面禁止卸载，孩子卸不掉"
+                    deviceAdminActive -> "已开启（设备管理员）：能挡住不懂的人；会玩设置的人可以先停用管理员再卸载"
+                    else -> "未开启，孩子长按图标就能直接卸载"
+                },
             ) {
                 OutlinedButton(onClick = onEnableDeviceAdmin) {
                     Text(if (deviceAdminActive) "已开启" else "去开启")
                 }
             }
+            if (!deviceOwner) {
+                SettingRow(
+                    title = "更强的卸载保护",
+                    subtitle = "把本应用设成「设备所有者」后，系统会禁止卸载。需要电脑跑一次命令，只需一次。",
+                ) {
+                    TextButton(onClick = { showDeviceOwnerGuide = true }) { Text("怎么做") }
+                }
+            }
+            SettingRow(
+                title = "图标藏起来了，怎么进来？",
+                subtitle = "① 点通知栏那条「小鲸守护正在运行」（这条通知删不掉）；② 被锁屏时在屏幕右下角连点 5 下（第三下会冒出小圆点）。实在进不去就重装一次，配置不会丢。",
+            ) {
+                Text("")
+            }
+            val canNotify = com.fangchenmi.guard.service.GuardNotifier.canNotify(context)
+            ToggleRow(
+                title = "在桌面显示图标",
+                subtitle = when {
+                    // 界面必须说实话：没通知权限时图标其实没藏，别让家长以为藏了。
+                    !config.showLauncherIcon && !canNotify ->
+                        "通知权限没开，为避免你进不来，图标暂时保留。去系统设置允许通知后才会隐藏。"
+                    config.showLauncherIcon ->
+                        "图标显示在桌面上——孩子长按图标就能找到卸载入口，不建议打开。"
+                    else ->
+                        "图标已隐藏，桌面和搜索里都找不到本应用。请从通知栏「小鲸守护正在运行」进入家长设置。"
+                },
+                checked = config.showLauncherIcon,
+                onCheckedChange = { onConfigChange(config.copy(showLauncherIcon = it)) },
+            )
             ToggleRow(
                 title = "禁止进入设置与管理工具",
                 subtitle = "设置、手机管家、权限管理、应用商店、文件管理：这些入口都能用来关掉守护或装应用",
@@ -249,7 +317,22 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(20.dp))
+        // 设置本来就是改一下存一下，但家长要的不是技术真相，是「我点过了、它确实存下来了」。
+        // 这个按钮负责给这个确定感，并顺手返回上一页。
+        Button(
+            onClick = {
+                Toast.makeText(context, "设置已保存", Toast.LENGTH_SHORT).show()
+                onBack()
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+        ) {
+            Text("保存并返回", style = MaterialTheme.typography.titleMedium)
+        }
+
+        Spacer(Modifier.height(20.dp))
         ActionCard(
             title = "解除守护",
             detail = "关闭守护并取消卸载保护。仅家长使用。",
@@ -269,6 +352,48 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(30.dp))
+    }
+
+    if (showDeviceOwnerGuide) {
+        AlertDialog(
+            onDismissRequest = { showDeviceOwnerGuide = false },
+            title = { Text("怎么做到「卸不掉」") },
+            text = {
+                Column {
+                    Text(
+                        "现在的「设备管理员」只能让卸载多一步：得先停用管理员。",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "把本应用设成「设备所有者」之后，系统层面会直接禁止卸载——长按、设置里、第三方管家都不行。",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "1. 平板用数据线连电脑，打开 USB 调试\\n" +
+                            "2. 电脑上执行：",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        com.fangchenmi.guard.admin.GuardDeviceAdminReceiver.DEVICE_OWNER_COMMAND,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "只需做一次。前提是设备上没有登录任何账号（有账号系统会拒绝）；" +
+                            "恢复出厂设置同样能把本应用清掉，这一点没有应用能防住。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDeviceOwnerGuide = false }) { Text("知道了") }
+            },
+        )
     }
 
     if (confirmDeactivate) {

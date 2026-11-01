@@ -63,6 +63,10 @@ class GuardEngine(
     private var service: AccessibilityService? = null
     private var overlay: LockOverlay? = null
 
+    private var lastNotifyAt = 0L
+
+    @Volatile
+    private var settingsGraceUntil = 0L
     private var attachedAt = 0L
     private var foregroundSeenAt = 0L
     private var lastSaveAt = 0L
@@ -156,6 +160,7 @@ class GuardEngine(
         val now = System.currentTimeMillis()
         val config = configStore.current()
         clearBlindWindowIfNeeded(now, config)
+        keepStatusNotification(now, config)
         state = UsageMeter.reduce(state, MeterEvent.Tick, now, dayKey(now, config), meterContext(config))
         if (now / 1000 % 30 == 0L) {
             Log.v(
@@ -183,7 +188,9 @@ class GuardEngine(
             ignoredPackages = facts.ignoredPackages,
             selfPackages = facts.selfPackages,
             settingsPackages = facts.settingsPackages,
+            installerPackages = facts.installerPackages,
             limits = Features.limits,
+            settingsGraceUntilMillis = settingsGraceUntil,
         )
         if (BuildConfig.DEBUG && state.foregroundPkg != lastLoggedPkg) {
             lastLoggedPkg = state.foregroundPkg
@@ -269,7 +276,11 @@ class GuardEngine(
         val message = when (reason) {
             LockReason.APP_LIMIT -> "「$label」今天的时长已经用完啦"
             LockReason.BLOCKED_APP ->
-                if (facts.isSettings(pkg)) "设置需要家长密码才能进入" else "「$label」不能使用"
+                when {
+                    facts.isInstaller(pkg) -> "卸载和安装应用都需要家长密码"
+                    facts.isSettings(pkg) -> "设置需要家长密码才能进入"
+                    else -> "「$label」不能使用"
+                }
             else -> "现在还不能使用"
         }
         runCatching { Toast.makeText(context, message, Toast.LENGTH_SHORT).show() }
@@ -317,6 +328,17 @@ class GuardEngine(
      * 在下次切换窗口之前守护是「瞎」的。超过 3 秒还没收到任何事件，就当作盲区，
      * 先弹回桌面一次，把状态拉回已知。
      */
+    /**
+     * 常驻通知每 20 秒自检一次，被划掉就补回来。
+     * 节流是因为心跳是一秒一次，没必要每次都查通知。
+     */
+    private fun keepStatusNotification(now: Long, config: GuardConfig) {
+        if (now - lastNotifyAt < 20_000L) return
+        lastNotifyAt = now
+        val ctx = service ?: return
+        GuardNotifier.ensure(ctx, config)
+    }
+
     private fun clearBlindWindowIfNeeded(now: Long, config: GuardConfig) {
         if (!config.enabled) return
         if (foregroundSeenAt != 0L) return
@@ -327,6 +349,15 @@ class GuardEngine(
     }
 
     /** 家长改了配置后调用，让开关立刻生效。 */
+    /**
+     * 家长从应用内跳系统设置（开无障碍、开卸载保护）之前调用。
+     * 只放行「设置」，不放行其它任何拦截；窗口很短，过期自动恢复。
+     */
+    fun allowSystemSettings(seconds: Int = 120) {
+        settingsGraceUntil = System.currentTimeMillis() + seconds * 1000L
+        Log.i(TAG, "settings grace opened for ${seconds}s")
+    }
+
     fun onConfigChanged() {
         ensureTicker()
         tick()

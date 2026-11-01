@@ -43,6 +43,7 @@ import com.fangchenmi.guard.admin.GuardDeviceAdminReceiver
 import com.fangchenmi.guard.core.model.GuardConfig
 import com.fangchenmi.guard.core.pin.PinHasher
 import com.fangchenmi.guard.service.GuardAccessibilityService
+import com.fangchenmi.guard.service.GuardNotifier
 import com.fangchenmi.guard.service.UnlockOutcome
 import com.fangchenmi.guard.ui.components.CreatePinDialog
 import com.fangchenmi.guard.ui.components.OceanBackground
@@ -88,6 +89,7 @@ private fun GuardRoot() {
     }
     var accessibilityEnabled by remember { mutableStateOf(GuardAccessibilityService.isEnabled(context)) }
     var deviceAdminActive by remember { mutableStateOf(GuardDeviceAdminReceiver.isActive(context)) }
+    var deviceOwner by remember { mutableStateOf(GuardDeviceAdminReceiver.isDeviceOwner(context)) }
 
     var pinTarget by remember { mutableStateOf<PinTarget?>(null) }
     var showCreatePin by remember { mutableStateOf(false) }
@@ -130,6 +132,8 @@ private fun GuardRoot() {
     val updateConfig: (GuardConfig) -> Unit = { new ->
         Guard.config.write(new)
         Guard.engine.onConfigChanged()
+        // 图标显隐、常驻通知跟着配置走（内部会检查通知权限，没权限就不隐藏）。
+        GuardNotifier.sync(context, new)
     }
 
     var notice by remember { mutableStateOf<String?>(null) }
@@ -145,6 +149,7 @@ private fun GuardRoot() {
     }
 
     fun openAccessibilitySettings() {
+        Guard.engine.allowSystemSettings()
         runCatching {
             context.startActivity(
                 Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -154,12 +159,49 @@ private fun GuardRoot() {
     }
 
     fun openDeviceAdmin() {
+        Guard.engine.allowSystemSettings()
         runCatching {
             context.startActivity(
                 GuardDeviceAdminReceiver.activationIntent(context)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
         }
+    }
+
+    // 装新版、系统升级之后，系统会把无障碍授权清掉，守护静默失效。
+    // 家长不会主动去看徽标，所以在首页直接用对话框挡住，不给忽略的机会。
+    var a11yWarned by remember { mutableStateOf(false) }
+    // 系统重新绑定无障碍服务要 1~2 秒，刚启动就判会误报「已失效」。
+    // 等状态稳定下来再决定要不要弹。
+    var a11yChecked by remember { mutableStateOf(false) }
+    LaunchedEffect(accessibilityEnabled) {
+        if (accessibilityEnabled) {
+            a11yChecked = true
+        } else {
+            kotlinx.coroutines.delay(2000)
+            a11yChecked = true
+        }
+    }
+    if (a11yChecked && config.enabled && !accessibilityEnabled && route != Route.SETUP.name && !a11yWarned) {
+        AlertDialog(
+            onDismissRequest = { a11yWarned = true },
+            title = { Text("守护已经失效了") },
+            text = {
+                Text(
+                    "无障碍权限被系统关掉了（安装新版、系统升级之后都会这样）。\n\n" +
+                        "现在所有规则都不生效，应用也能被直接卸载。重新打开一次就好。",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    a11yWarned = true
+                    openAccessibilitySettings()
+                }) { Text("去开启") }
+            },
+            dismissButton = {
+                TextButton(onClick = { a11yWarned = true }) { Text("稍后") }
+            },
+        )
     }
 
     when (Route.valueOf(route)) {
@@ -185,13 +227,16 @@ private fun GuardRoot() {
             labelOf = { pkg -> Guard.facts.labelOf(pkg).toString() },
             onOpenSettings = { pinTarget = PinTarget.SETTINGS },
             onTempUnlock = { pinTarget = PinTarget.UNLOCK },
-            onOpenAccessibility = ::openAccessibilitySettings,
+            // 首页这两个入口不直接跳系统设置——先过密码，否则孩子点一下就进了设置。
+            onOpenAccessibility = { pinTarget = PinTarget.SETTINGS },
+            onEnableDeviceAdmin = { pinTarget = PinTarget.SETTINGS },
         )
 
         Route.SETTINGS -> SettingsScreen(
             config = config,
             accessibilityEnabled = accessibilityEnabled,
             deviceAdminActive = deviceAdminActive,
+            deviceOwner = deviceOwner,
             onConfigChange = updateConfig,
             onBack = { route = Route.HOME.name },
             onOpenApps = { route = Route.APPS.name },
